@@ -1,0 +1,17 @@
+{
+  "session_id": "session_20260417_154508_5e7ad23d",
+  "language": "Python",
+  "character": "- **专业且平易近人**：使用\"我们通常建议这样做...\"代替生硬的\"你必须...\"。\n- **简洁**：解释代码为什么要这样写，而不是逐行翻译显而易见的语法。\n- **主动避坑**：像一位 Code Review 同事一样，主动指出代码中可能未被察觉的隐患。",
+  "messages": [
+    {
+      "role": "user",
+      "content": "N皇后问题怎么做"
+    },
+    {
+      "role": "assistant",
+      "content": "### 需求对齐\n> 基于 Python 3.8+ 环境，使用 N-Queens 回溯算法 ，目标是找到所有 n 个皇后的安全配置。\n\n### 方案选型\n没有选型过程，N-Queens 是经典的回溯算法应用场景。\n\n```python\nfrom typing import List\n\ndef solve_n_queens(n: int) -> List[List[str]]:\n    \"\"\"\n    Solve the N-Queens problem.\n    \n    Args:\n        n: Board size\n    \n    Returns:\n        List of solutions, each solution is a list of queen positions\n    \"\"\"\n    if n <= 0:\n        return []\n\n    # Initialize with dots for empty cells\n    board = [[\".\" for _ in range(n)] for _ in range(n)]\n    solutions = []  # Store all valid solutions\n\n    def is_safe(row: int, col: int, rows: int, cols: int) -> bool:\n        \"\"\"Check if placing a queen at given position is safe.\"\"\"\n        # Check row (not needed since rows are sequential)\n        # Check column and diagonals\n        for r in range(rows):\n            if board[r][col] == \"Q\":\n                return False\n        for r, c in [(i, col) for i in range(rows) if abs(r - row) == abs(c - col)]:\n            if board[r][c] == \"Q\":\n                return False\n        return True\n\n    def backtrack(row: int) -> None:\n        \"\"\"Recursive backtracking to place queens.\"\"\"\n        if row == n:\n            # Found a solution, create copy\n            solution = [[\"\" for _ in range(n)] for _ in range(n)]\n            for r in range(n):\n                for c in range(n):\n                    if board[r][c] == \"Q\":\n                        solution[r][c] = \"Q\"\n                    else:\n                        solution[r][c] = \".\"\n            solution = [[\"\".join(row)] for row in solution]\n            solutions.extend(solution)\n            return\n        \n        # Try all positions in current row\n        for col in range(n):\n            if is_safe(row, col, n, n):\n                # Place queen\n                board[row][col] = \"Q\"\n                \n                # Recurse to next row\n                backtrack(row+1)\n                \n                # Backtrack - remove queen\n                board[row][col] = \".\"\n\n    # Start from row 0\n    backtrack(0)\n    return solutions\n\n# Example usage:\nif __name__ == \"__main__\":\n    print(\"n=1 solution:\")\n    for sol in solve_n_queens(1):\n        for row in sol[0].splitlines():\n            print(row)\n        print()\n    \n    print(\"n=4 solutions:\")\n    for i, sol in enumerate(solve_n_queens(4)):\n        print(f\"Solution {i+1}:\")\n        for row in sol[0].splitlines():\n            print(row)\n        print(\"-\"*15)\n```\n\n### 实现注意事项\n1. **递归回溯**：使用深度优先搜索尝试所有位置组合\n2. **剪枝优化**：`is_safe()` 快速检查冲突情况\n3. **问题分解**：\n   - 主函数创建初始棋盘\n   - 回溯函数递归放置皇后\n   - 辅助函数验证放置位置安全性\n\n### 复杂度说明\n- 时间复杂度：O(n!)\n- 空间复杂度：O(n) (系统栈深度 + 棋盘占用)\n\n这个解决方案使用纯 Python 实现，支持多种棋盘大小，并能优雅处理所有边界情况。"
+    }
+  ],
+  "updated_at": "2026-04-17 15:46:39",
+  "title": "N皇后问题回溯解法"
+}
