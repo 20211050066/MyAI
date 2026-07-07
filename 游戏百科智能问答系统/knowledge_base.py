@@ -46,7 +46,7 @@ class KnowledgeBaseService(object):
         os.makedirs(config.persist_directory, exist_ok=True)
         self.chroma = Chroma(
             collection_name=config.collection_name,
-            embedding_function=DashScopeEmbeddings(model="text-embedding-v4"),
+            embedding_function=DashScopeEmbeddings(model=config.embedding_model_name),
             persist_directory=config.persist_directory,
         )
 

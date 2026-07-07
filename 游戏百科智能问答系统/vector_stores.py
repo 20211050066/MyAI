@@ -14,4 +14,5 @@ class VectorStoreService(object):
         )
 
     def get_retriever(self):
-        return self.vector_store.as_retriever(serch_kwargs={"k": config.similarity_threshold})
+        return self.vector_store.as_retriever(search_kwargs={"k": config.similarity_threshold})
+
