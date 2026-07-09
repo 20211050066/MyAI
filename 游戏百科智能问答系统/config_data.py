@@ -18,3 +18,10 @@ chat_model_name = "qwen3-max"
 # Prompt
 system_prompt = "以我提供的已知参考资料为主，简洁和专业的回答用户问题。参考资料：{context}。"
 user_prompt = "请回答问题：{input}"
+
+# Session Id
+session_config = {
+    "configurable":{
+        "session_id": "user_001",
+    }
+}
