@@ -1,78 +1,62 @@
+"""RAG 问答服务"""
+import logging
+
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableWithMessageHistory, RunnableLambda
+from langchain_core.runnables import RunnableLambda, RunnableWithMessageHistory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-from file_history_store import get_history
-from vector_stores import VectorStoreService
-from langchain_community.embeddings import DashScopeEmbeddings
-from langchain_core.prompts import ChatPromptTemplate, format_document, MessagesPlaceholder
-import config_data as config
-from langchain_community.chat_models import ChatTongyi
+from config import config
+from chat_history_store import get_history
+from hybrid_search import HybridSearchService
 
+logger = logging.getLogger(__name__)
 
-def print_prompt(prompt):
-    print("=" * 20)
-    print(prompt.to_string())
-    print("=" * 20)
-    return prompt
+SYSTEM_PROMPT = "你是一个专业的游戏百科助手。请基于以下已知参考资料，简洁专业地回答用户问题。" \
+                "如果参考资料不足以回答问题，请如实告知。\n\n参考资料：{context}"
+USER_PROMPT = "问题：{input}"
 
 
-class RAGService(object):
+class RAGService:
+    """RAG 问答服务，支持流式输出"""
+
     def __init__(self):
-        self.vector_store_service = VectorStoreService(DashScopeEmbeddings(model=config.embedding_model_name))
-        self.prompt_template = ChatPromptTemplate.from_messages(
-            [
-                ("system", config.system_prompt),
-                ("system", "对话模式，请记住以下上下文"),
-                MessagesPlaceholder(variable_name="history"),
-                ("human", config.user_prompt),
-            ]
-        )
-        self.chat_model = ChatTongyi(model=config.chat_model_name)
-        self.chain = self.__get_chain()
+        self.search_service = HybridSearchService()
+        self.prompt_template = ChatPromptTemplate.from_messages([
+            ("system", SYSTEM_PROMPT),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", USER_PROMPT),
+        ])
+        self.chat_model = self._get_chat_model()
+        self.chain = self._build_chain()
 
-    def __get_chain(self):
-        retriever = self.vector_store_service.get_retriever()
+    def _get_chat_model(self):
+        try:
+            from langchain_community.chat_models import ChatTongyi
+            return ChatTongyi(model=config.llm.chat_model)
+        except ImportError:
+            raise ImportError("请安装 langchain-community 和 dashscope")
 
-        def format_document(docs):
-            if not docs:
-                return "无相关参考资料"
-            formatted_str = ""
-            for doc in docs:
-                formatted_str += f"文档片段：{doc.page_content}\n文档元数据：{doc.metadata}\n\n"
-            return formatted_str
+    def _build_chain(self):
+        def retrieve_context(inputs: dict) -> dict:
+            raw = inputs.get("input", "")
+            if isinstance(raw, dict):
+                query = raw.get("input", "")
+                history = raw.get("history", [])
+            else:
+                query = raw
+                history = inputs.get("history", [])
+            
+            results = self.search_service.search(query)
+            ctx = "\n\n".join(f"文档片段：{r['content']}\n来源 ID：{r['document_id']}" for r in results) if results else "无相关参考资料"
+            return {"context": ctx, "input": query, "history": history}
 
-        def get_retriever_args(input: dict) -> str:
-            return input["input"]
-        def get_prompt_template_args(input):
-            output = {}
-            output["input"] = input["input"]["input"]
-            output["history"] = input["input"]["history"]
-            output["context"] = input["context"]
-            return output
+        chain = RunnableLambda(retrieve_context) | self.prompt_template | self.chat_model | StrOutputParser()
+        return RunnableWithMessageHistory(chain, get_history, input_messages_key="input", history_messages_key="history")
 
-            # 测试中间环节
+    def invoke(self, query: str, session_id: str = "default") -> str:
+        """同步调用"""
+        return self.chain.invoke({"input": query}, config={"configurable": {"session_id": session_id}})
 
-        def test(input):
-            print("=" * 20)
-            print(input)
-            print("=" * 20)
-            return input
-
-        chain = (
-                {
-                    "input": RunnablePassthrough(),
-                    "context": RunnableLambda(get_retriever_args) | retriever | format_document
-                } | RunnableLambda(get_prompt_template_args) | self.prompt_template | print_prompt | self.chat_model | StrOutputParser()
-        )
-        conversation_chain = RunnableWithMessageHistory(
-            chain,
-            get_history,
-            input_messages_key="input",
-            history_messages_key="history"
-        )
-        return conversation_chain
-
-
-if __name__ == '__main__':
-    res = RAGService().chain.invoke({"input": "这把我玩的洛克，有什么海克斯推荐吗"}, config.session_config)
-    print(res)
+    def stream(self, query: str, session_id: str = "default"):
+        """流式调用"""
+        return self.chain.stream({"input": query}, config={"configurable": {"session_id": session_id}})

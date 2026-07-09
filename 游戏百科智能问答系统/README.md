@@ -1,0 +1,66 @@
+## 项目结构                                                                                                                                                                                                                       
+
+  游戏百科智能问答系统/                                                                                                                                                                                                             
+  ├── app.py                    # Streamlit 主页面 - 智能问答对话                                                                                                                                                                   
+  ├── main.py                   # 启动入口                                                                                                                                                                                          
+  ├── config.py                 # 全局配置管理（PostgreSQL/Redis/Embedding/LLM/搜索参数）                                                                                                                                           
+  ├── db_pool.py                # PostgreSQL + Redis 连接池                                                                                                                                                                         
+  ├── doc_processor.py          # 多格式文档解析（TXT/PDF/DOCX/PPTX/图片）                                                                                                                                                          
+  ├── embeddings.py             # Embedding 嵌入服务                                                                                                                                                                                
+  ├── knowledge_base.py         # 知识库管理（上传/索引/查询/删除/统计）
+  ├── vector_search.py          # 向量搜索（pgvector, 余弦距离, HNSW 索引）                                                                                                                                                         
+  ├── fulltext_search.py        # 全文搜索（PostgreSQL tsvector + Jieba 分词）                                                                                                                                                      
+  ├── reranker.py               # 重排序服务（智谱 Rerank API）                                                                                                                                                                     
+  ├── hybrid_search.py          # 混合搜索编排（Query Rewrite → 双路召回 → RRF融合 → Rerank）                                                                                                                                       
+  ├── chat_history_store.py     # Redis 会话历史存储                                                                                                                                                                                
+  ├── rag.py                    # RAG 问答服务                                                                                                                                                                                      
+  ├── requirements.txt          # 依赖清单                                                                                                                                                                                          
+  ├── .env                      # 环境变量
+  └── pages/                                                                                                                                                                                                                        
+      ├── 1_知识库管理.py        # 知识库管理页面（上传/列表/统计）                                                                                                                                                                 
+      └── 2_对话历史.py          # 对话历史页面（浏览/清空）                                                                                                                                                                        
+                                                                                                                                                                                                                                    
+  ## 核心架构：混合搜索流水线                                                                                                                                                                                                       
+                                                                                                                                                                                                                                    
+  按照 混合搜索.doc 文档设计，搜索流程共 5 步：                                                                                                                                                                                     
+
+   步骤      功能                         技术                                                                                                                                                                                      
+  ━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━                                                                                                                                   
+   Step 1    Query Rewrite（查询改写）    小模型 LLM → 原始 + 2 个变体 → Redis 缓存                                                                                                                                                 
+  ────────  ───────────────────────────  ────────────────────────────────────────────────────────                                                                                                                                   
+   Step 2    双路召回                     向量搜索(pgvector 1024维) + 全文搜索(tsvector + Jieba)                                                                                                                                    
+  ────────  ───────────────────────────  ────────────────────────────────────────────────────────                                                                                                                                   
+   Step 3    RRF 融合排序                 Reciprocal Rank Fusion（K=60）                                                                                                                                                            
+  ────────  ───────────────────────────  ────────────────────────────────────────────────────────
+   Step 4    Rerank 精排                  智谱 Rerank API（阈值 0.1，超时 10s）                                                                                                                                                     
+  ────────  ───────────────────────────  ────────────────────────────────────────────────────────                                                                                                                                   
+   Step 5    去重截断                     同文档最多 2 片段，返回 Top-K                                                                                                                                                             
+                                                                                                                                                                                                                                    
+  ## 数据存储                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                    
+   存储                     用途                                                                                                                                                                                                    
+  ━━━━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   PostgreSQL + pgvector    知识库：documents 表 + document_chunks 表（含 vector 列 + tsvector 索引）                                                                                                                               
+  ───────────────────────  ───────────────────────────────────────────────────────────────────────────                                                                                                                              
+   Redis                    会话历史（24h 过期）、查询缓存（10min）、搜索结果缓存（1min）                                                                                                                                           
+                                                                                                                                                                                                                                    
+  ## 前端功能                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                    
+  - 🎮 主页面 — 多轮对话、流式输出、上下文感知                                                                                                                                                                                      
+  - 📚 知识库管理 — 支持上传 TXT/PDF/DOCX/PPTX/图片，文本直接导入，文档列表/删除/统计
+  - 💬 对话历史 — 查看/清空所有会话                                                                                                                                                                                                 
+                                                                                                                                                                                                                                    
+  ## 启动方式                                                                                                                                                                                                                       
+                                                                                                                                                                                                                                    
+  # 1. 安装依赖                                                                                                                                                                                                                     
+  pip install -r requirements.txt                                                                                                                                                                                                   
+                                                                                                                                                                                                                                    
+  # 2. 配置环境变量（复制 .env.example 并填写）                                                                                                                                                                                     
+  set DASHSCOPE_API_KEY=your_key                                                                                                                                                                                                    
+  set PG_PASSWORD=your_password                                                                                                                                                                                                     
+                                                                                                                                                                                                                                    
+  # 3. 初始化数据库                                                                                                                                                                                                                 
+  python -c "from db_pool import ensure_pgvector; ensure_pgvector()"                                                                                                                                                                
+                                                                                                                                                                                                                                    
+  # 4. 启动应用                                                                                                                                                                                                                     
+  python main.py
