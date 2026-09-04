@@ -1,12 +1,13 @@
 """RAG 问答服务"""
 import logging
 
+from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnableLambda, RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables import RunnableLambda
 
 from config import config
-from chat_history_store import get_history
+from chat_history_store import RedisChatHistoryStore
 from hybrid_search import HybridSearchService
 
 logger = logging.getLogger(__name__)
@@ -38,25 +39,49 @@ class RAGService:
 
     def _build_chain(self):
         def retrieve_context(inputs: dict) -> dict:
-            raw = inputs.get("input", "")
-            if isinstance(raw, dict):
-                query = raw.get("input", "")
-                history = raw.get("history", [])
-            else:
-                query = raw
-                history = inputs.get("history", [])
-            
+            query = inputs.get("input", "")
+            history = inputs.get("history", [])
+
             results = self.search_service.search(query)
-            ctx = "\n\n".join(f"文档片段：{r['content']}\n来源 ID：{r['document_id']}" for r in results) if results else "无相关参考资料"
+            ctx = (
+                "\n\n".join(
+                    f"文档片段：{r['content']}\n来源 ID：{r['document_id']}"
+                    for r in results
+                )
+                if results
+                else "无相关参考资料"
+            )
             return {"context": ctx, "input": query, "history": history}
 
-        chain = RunnableLambda(retrieve_context) | self.prompt_template | self.chat_model | StrOutputParser()
-        return RunnableWithMessageHistory(chain, get_history, input_messages_key="input", history_messages_key="history")
+        return RunnableLambda(retrieve_context) | self.prompt_template | self.chat_model | StrOutputParser()
+
+    def _load_history(self, session_id: str):
+        """读取会话之前的消息"""
+        return RedisChatHistoryStore(session_id).messages
+
+    def _save_turn(self, session_id: str, query: str, answer: str) -> None:
+        """把当前一轮问答写入 Redis 会话历史"""
+        RedisChatHistoryStore(session_id).add_messages([
+            HumanMessage(content=query),
+            AIMessage(content=answer),
+        ])
 
     def invoke(self, query: str, session_id: str = "default") -> str:
         """同步调用"""
-        return self.chain.invoke({"input": query}, config={"configurable": {"session_id": session_id}})
+        history = self._load_history(session_id)
+        answer = self.chain.invoke({"input": query, "history": history})
+        self._save_turn(session_id, query, answer)
+        return answer
 
     def stream(self, query: str, session_id: str = "default"):
         """流式调用"""
-        return self.chain.stream({"input": query}, config={"configurable": {"session_id": session_id}})
+        return self._stream(query, session_id)
+
+    def _stream(self, query: str, session_id: str):
+        history = self._load_history(session_id)
+        chunks = []
+        for chunk in self.chain.stream({"input": query, "history": history}):
+            chunks.append(chunk)
+            yield chunk
+        if chunks:
+            self._save_turn(session_id, query, "".join(chunks))

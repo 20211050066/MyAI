@@ -41,9 +41,9 @@ class EmbeddingConfig:
 @dataclass
 class LLMConfig:
     """大模型配置"""
-    chat_model: str = "qwen3-max"
-    rewrite_model: str = "qwen3-1.8b"      # 查询改写使用小模型，速度快
-    api_key: str = os.getenv("DASHSCOPE_API_KEY", os.getenv("QW_API_KEY", ""))
+    chat_model: str = "deepseek-v4-flash"
+    rewrite_model: str = "deepseek-v4-flash"      # 查询改写使用小模型，速度快
+    api_key: str = os.getenv("DEEPSEEK_API_KEY", "")
     rewrite_timeout: int = 8
     max_retries: int = 2
 
